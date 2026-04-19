@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user in the system.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["admin", "seller", "affiliate"],
+          "description": "User role."
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["role", "name", "email", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product listed by a seller.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "sellerId": {
+          "type": "string",
+          "description": "User ID of the seller."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["name", "description", "price", "sellerId", "createdAt"]
+    },
+    "Click": {
+      "title": "Click",
+      "description": "A tracked affiliate link click.",
+      "type": "object",
+      "properties": {
+        "productId": {
+          "type": "string"
+        },
+        "affiliateId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["productId", "affiliateId", "timestamp"]
+    },
+    "Commission": {
+      "title": "Commission",
+      "description": "A simulated commission.",
+      "type": "object",
+      "properties": {
+        "productId": {
+          "type": "string"
+        },
+        "affiliateId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "paid"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["productId", "affiliateId", "amount", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Users collection."
+    },
+    "/products/{productId}": {
+      "schema": {
+        "$ref": "#/entities/Product"
+      },
+      "description": "Products listed by sellers."
+    },
+    "/clicks/{clickId}": {
+      "schema": {
+        "$ref": "#/entities/Click"
+      },
+      "description": "Clicks tracked for affiliate links."
+    },
+    "/commissions/{commissionId}": {
+      "schema": {
+        "$ref": "#/entities/Commission"
+      },
+      "description": "Commissions earned by affiliates."
+    }
+  }
+}

@@ -1,0 +1,141 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function getUserRole() {
+      let doc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return doc != null ? doc.data.role : null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == 'admin';
+    }
+
+    function isSeller() {
+      return isSignedIn() && getUserRole() == 'seller';
+    }
+
+    function isAffiliate() {
+      return isSignedIn() && getUserRole() == 'affiliate';
+    }
+
+    // --- Users ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['role', 'name', 'email', 'createdAt']) &&
+             data.role in ['admin', 'seller', 'affiliate'] &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 200 &&
+             data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      // User can create their own profile during registration
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      
+      allow update: if isOwner(userId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name']) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 100;
+        
+      allow delete: if isAdmin();
+    }
+
+    // --- Products ---
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'description', 'price', 'sellerId', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.price is number && data.price >= 0 &&
+             data.sellerId == request.auth.uid &&
+             data.createdAt == request.time;
+    }
+
+    function isValidProductUpdate(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.price is number && data.price >= 0;
+    }
+
+    match /products/{productId} {
+      // Anyone can see listed products
+      allow read: if true;
+      
+      allow create: if isSeller() && isValidProduct(incoming());
+      
+      allow update: if (isSeller() && existing().sellerId == request.auth.uid && 
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'price', 'imageUrl']) &&
+        isValidProductUpdate(incoming())) || isAdmin();
+        
+      allow delete: if (isSeller() && existing().sellerId == request.auth.uid) || isAdmin();
+    }
+
+    // --- Clicks ---
+    function isValidClick(data) {
+      return data.keys().hasAll(['productId', 'affiliateId', 'timestamp']) &&
+             data.productId is string && data.productId.size() > 0 && data.productId.size() <= 100 &&
+             data.affiliateId is string && data.affiliateId.size() > 0 && data.affiliateId.size() <= 100 &&
+             // Ensure the product exists
+             exists(/databases/$(database)/documents/products/$(data.productId)) &&
+             // Ensure the affiliate is a real user and has affiliate role
+             get(/databases/$(database)/documents/users/$(data.affiliateId)).data.role == 'affiliate' &&
+             data.timestamp == request.time;
+    }
+
+    match /clicks/{clickId} {
+      allow read: if isAdmin() || (isAffiliate() && existing().affiliateId == request.auth.uid);
+      allow create: if isValidClick(incoming());
+      // Clicks are immutable
+      allow update, delete: if false;
+    }
+
+    // --- Commissions ---
+    function isValidCommission(data) {
+      return data.keys().hasAll(['productId', 'affiliateId', 'amount', 'status', 'timestamp']) &&
+             data.productId is string && data.productId.size() > 0 && data.productId.size() <= 100 &&
+             data.affiliateId is string && data.affiliateId.size() > 0 && data.affiliateId.size() <= 100 &&
+             data.amount is number && data.amount > 0 &&
+             data.status in ['pending', 'paid'] &&
+             exists(/databases/$(database)/documents/products/$(data.productId)) &&
+             get(/databases/$(database)/documents/users/$(data.affiliateId)).data.role == 'affiliate' &&
+             data.timestamp == request.time;
+    }
+
+    match /commissions/{commissionId} {
+      allow get: if isAdmin() || (isAffiliate() && existing().affiliateId == request.auth.uid);
+      allow list: if isAdmin() || (isAffiliate() && existing().affiliateId == request.auth.uid);
+      
+      // Usually cloud functions create commissions, but if client creates:
+      allow create: if isAffiliate() && isValidCommission(incoming()) && incoming().affiliateId == request.auth.uid;
+      
+      // Only admin can update commission status
+      allow update: if isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status']) &&
+        incoming().status in ['pending', 'paid'];
+      
+      allow delete: if false;
+    }
+  }
+}
